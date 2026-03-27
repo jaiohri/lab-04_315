@@ -66,7 +66,7 @@ XGpio Red_RGBInst;
 
 #define PMOD_MOTOR_BASEADDR                 XPAR_STEPPER_MOTOR_BASEADDR
 
-#define RGB_LED_BASEADDR					XPAR_PMOD_RGB_DEVICE_ID
+#define RGB_LED_BASEADDR					XPAR_GPIO_LEDS_BASEADDR
 
 // The number of positions/delays which can be sequenced
 #define SEQUENCE_LENGTH 10
@@ -81,8 +81,6 @@ typedef struct decision_parameters {
 
 decision_parameters motor_parameters;
 int parameters_flag = 0;
-
-volatile int g_motor_abort = 0;
 
 int positionSequence[SEQUENCE_LENGTH][2] = {{NO_OF_STEPS_PER_REVOLUTION_FULL_DRIVE, 0}}; // position-delay array
 int sequenceIndex = 0; // the number of position-delay sequences
@@ -132,7 +130,6 @@ int main (void)
 	XGpio_SetDataDirection(&BTNInst, 1, 0xFF);
 	// Set the RGB LED direction to output
 	XGpio_SetDataDirection(&Red_RGBInst, 1, 0x00);
-	XGpio_SetDataDirection(&Red_RGBInst, 2, 0x00);
 
 	// Initialization of motor parameter values here
 	motor_parameters.currentposition_in_steps = 0;
@@ -387,7 +384,6 @@ static void _Task_Uart( void *pvParameters ){
 					// start the sequence if the user enters 'g'
 					else if(command == 'g'){
 						loop_count = 1;
-						g_motor_abort = 0;
 						decision_parameters * const pointer_to_motor_struct_values = &motor_parameters;
 						xQueueSendToBack(xQueue_FIFO1, &pointer_to_motor_struct_values, 0UL);
 					}
@@ -423,9 +419,9 @@ static void _Task_Motor( void *pvParameters ){
 
 		/**********************************************************************************************/
 
-		if (xQueueReceive(xQueue_FIFO1, &read_motor_parameters_from_queue, portMAX_DELAY) != pdPASS) {
-			continue;
-		}
+		xQueueReceive(xQueue_FIFO1, &read_motor_parameters_from_queue, portMAX_DELAY);
+
+		/**********************************************************************************************/
 
 
 
@@ -450,22 +446,19 @@ static void _Task_Motor( void *pvParameters ){
 		Stepper_setCurrentPositionInSteps(read_motor_parameters_from_queue->currentposition_in_steps);
 
 		for (int i = 0; i < sequenceIndex; i++) {
-			if (g_motor_abort) {
-				break;
-			}
-			XGpio_DiscreteWrite(&Red_RGBInst, 2, 0x2);
+			XGpio_DiscreteWrite(&Red_RGBInst, 1, 0x02);
 			Stepper_moveToPositionInSteps((long)positionSequence[i][0]);
-			Stepper_disableMotor();
-			XGpio_DiscreteWrite(&Red_RGBInst, 2, 0x0);
-			if (g_motor_abort) {
-				break;
+			while (!Stepper_motionComplete()) {
+				vTaskDelay(1);
 			}
-			vTaskDelay(pdMS_TO_TICKS(positionSequence[i][1]));
+			Stepper_disableMotor();
+			XGpio_DiscreteWrite(&Red_RGBInst, 1, 0x00);
+			if (positionSequence[i][1] > 0) {
+				vTaskDelay(pdMS_TO_TICKS(positionSequence[i][1]));
+			}
 		}
-		XGpio_DiscreteWrite(&Red_RGBInst, 2, 0x0);
 
-		read_motor_parameters_from_queue->currentposition_in_steps = Stepper_getCurrentPositionInSteps();
-		motor_parameters.currentposition_in_steps = read_motor_parameters_from_queue->currentposition_in_steps;
+		motor_parameters.currentposition_in_steps = Stepper_getCurrentPositionInSteps();
 
 		/**********************************************************************************************/
 
@@ -493,7 +486,7 @@ static void _Task_Emerg_Stop( void *pvParameters ){
 
 		/**********************************************************************************************/
 
-		btnState = (int)((XGpio_DiscreteRead(&BTNInst, 1) & 0x01) ? 1 : 0);
+		btnState = (int)(XGpio_DiscreteRead(&BTNInst, 1) & 0x01);
 
 		// if the button is pressed, increase the counter. Else reset it to zero.
 		if(btnState == 1) pressedCount ++;
@@ -514,13 +507,13 @@ static void _Task_Emerg_Stop( void *pvParameters ){
 			/**********************************************************************************************/
 
 			Stepper_SetupStop();
-			g_motor_abort = 1;
+			sequenceIndex = 0;
 
 			for (;;) {
-				XGpio_DiscreteWrite(&Red_RGBInst, 2, 0x4);
-				vTaskDelay(pdMS_TO_TICKS(250));
-				XGpio_DiscreteWrite(&Red_RGBInst, 2, 0x0);
-				vTaskDelay(pdMS_TO_TICKS(250));
+				XGpio_DiscreteWrite(&Red_RGBInst, 1, 0x04);
+				vTaskDelay(pdMS_TO_TICKS(167));
+				XGpio_DiscreteWrite(&Red_RGBInst, 1, 0x00);
+				vTaskDelay(pdMS_TO_TICKS(167));
 			}
 		}
 		// wait 10ms (polling loop at 100Hz)
