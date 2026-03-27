@@ -28,7 +28,7 @@
  *  _Task_Motor() is responsible receiving the queue parameters and then setting up the motor parameters by calling the respective functions from the stepper.c file.
  *
  *  _Task_Emerg_Stop() will execute emergency stop when Btn0 is pressed for three consecutive polls. The motor will now begin to decelerate and come to a complete stop.
- *  And a red light on the RGB led will flash continuously at 2 Hz frequency.
+ *  And a red light on the RGB led will flash continuously at 3 Hz frequency after emergency stop.
  *
  */
 
@@ -62,11 +62,13 @@ XGpio BTNInst;
 
 //GPIO RGB led Instance and DEVICE ID
 XGpio Red_RGBInst;
-#define RGB_LED_BASEADDR					XPAR_GPIO_LEDS_BASEADDR
+#if defined(XPAR_PMOD_RGB_DEVICE_ID)
+#define RGB_LED_BASEADDR				XPAR_PMOD_RGB_DEVICE_ID
+#else
+#define RGB_LED_BASEADDR				XPAR_GPIO_LEDS_BASEADDR
+#endif
 
 #define PMOD_MOTOR_BASEADDR                 XPAR_STEPPER_MOTOR_BASEADDR
-
-#define RGB_LED_BASEADDR					XPAR_GPIO_LEDS_BASEADDR
 
 // The number of positions/delays which can be sequenced
 #define SEQUENCE_LENGTH 10
@@ -445,7 +447,12 @@ static void _Task_Motor( void *pvParameters ){
 		Stepper_setDecelerationInStepsPerSecondPerSecond(read_motor_parameters_from_queue->rotational_deceleration);
 		Stepper_setCurrentPositionInSteps(read_motor_parameters_from_queue->currentposition_in_steps);
 
-		for (int i = 0; i < sequenceIndex; i++) {
+		/* Snapshot count at start; e-stop can clear sequenceIndex to drop remaining legs only */
+		int nPairs = sequenceIndex;
+		for (int i = 0; i < nPairs; i++) {
+			if (i > 0 && sequenceIndex == 0) {
+				break;
+			}
 			XGpio_DiscreteWrite(&Red_RGBInst, 1, 0x02);
 			Stepper_moveToPositionInSteps((long)positionSequence[i][0]);
 			while (!Stepper_motionComplete()) {
@@ -499,7 +506,7 @@ static void _Task_Emerg_Stop( void *pvParameters ){
 			//Set the "current stepper position" to the position at which it must now begin decelerating.
 			//There is a stepper driver function for adjusting the current position in steps and you have used in the _Task_Motor().
 			//Cancel the rest of the destination position-delay pairs.
-			//Inside an infinite loop, flash the Red light on RGB led at 2Hz.
+			//Inside an infinite loop, flash the Red light on RGB led at 3Hz (persist until hard reset).
 			//The Object Instance for RGB led is "Red_RGBInst".
 
 
@@ -509,11 +516,13 @@ static void _Task_Emerg_Stop( void *pvParameters ){
 			Stepper_SetupStop();
 			sequenceIndex = 0;
 
+			/* Part 2: take over from green immediately, then ~3 Hz red (167 ms half-period) */
+			XGpio_DiscreteWrite(&Red_RGBInst, 1, 0x04);
 			for (;;) {
-				XGpio_DiscreteWrite(&Red_RGBInst, 1, 0x04);
 				vTaskDelay(pdMS_TO_TICKS(167));
 				XGpio_DiscreteWrite(&Red_RGBInst, 1, 0x00);
 				vTaskDelay(pdMS_TO_TICKS(167));
+				XGpio_DiscreteWrite(&Red_RGBInst, 1, 0x04);
 			}
 		}
 		// wait 10ms (polling loop at 100Hz)
