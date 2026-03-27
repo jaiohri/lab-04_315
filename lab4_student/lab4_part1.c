@@ -132,7 +132,7 @@ int main (void)
 	XGpio_SetDataDirection(&BTNInst, 1, 0xFF);
 	// Set the RGB LED direction to output
 	XGpio_SetDataDirection(&Red_RGBInst, 1, 0x00);
-
+	XGpio_SetDataDirection(&Red_RGBInst, 2, 0x00);
 
 	// Initialization of motor parameter values here
 	motor_parameters.currentposition_in_steps = 0;
