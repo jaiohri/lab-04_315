@@ -101,8 +101,7 @@ volatile _Bool emergencyStopLatched = FALSE;
 	 //------------------------------------------------------
  
 	 // Initialize the PMOD for motor signals (JC PMOD is being used)
-	 // status = XGpio_Initialize(&PModMotorInst, PMOD_MOTOR_BASEADDR);
-	 status = XGpio_Initialize(&PModMotorInst, RGB_LED_BASEADDR);
+	 status = XGpio_Initialize(&PModMotorInst, PMOD_MOTOR_BASEADDR);
 	 if(status != XST_SUCCESS){
 	 xil_printf("GPIO Initialization for PMOD unsuccessful.\r\n");
 	 return XST_FAILURE;
@@ -513,11 +512,11 @@ volatile _Bool emergencyStopLatched = FALSE;
 					(void)XUartPs_ReadReg(XPAR_XUARTPS_0_BASEADDR, XUARTPS_FIFO_OFFSET);
 				}
 				if(Stepper_motionComplete()){
-                    vTaskDelay(100);
-					Stepper_disableMotor();
+                    vTaskDelay(1000);					
 				}
 				 XGpio_DiscreteWrite(&Red_RGBInst, RGB_LED_CHANNEL, 0x04);
 				 vTaskDelay(pdMS_TO_TICKS(167));
+                 Stepper_disableMotor();
 				 XGpio_DiscreteWrite(&Red_RGBInst, RGB_LED_CHANNEL, 0x00);
 				 vTaskDelay(pdMS_TO_TICKS(167));
 			 }
